@@ -30,9 +30,10 @@ function createMcBot(ip, port, botName, version, channel) {
 
     let reconnectTimer = null;
     let stopped = false;
+    let currentBot = null;
 
     const connect = () => {
-        if (stopped || activeBots.has(botName)) return;
+        if (stopped || currentBot) return;
 
         console.log(`جاري الاتصال بـ ${ip}:${port} باسم ${botName}...`);
 
@@ -45,6 +46,7 @@ function createMcBot(ip, port, botName, version, channel) {
         };
 
         const mcBot = mineflayer.createBot(botOptions);
+        currentBot = mcBot;
 
         activeBots.set(botName, {
             bot: mcBot,
@@ -148,29 +150,23 @@ function createMcBot(ip, port, botName, version, channel) {
         mcBot.on("end", (reason) => {
             console.log(`[خروج] ${botName}: ${reason || "socket closed"}`);
 
+            if (currentBot === mcBot) {
+                currentBot = null;
+            }
+
             if (reconnectTimer) clearTimeout(reconnectTimer);
 
             if (!stopped) {
                 console.log(`[إعادة اتصال] ${botName} سيحاول الدخول مرة أخرى خلال 5 ثوانٍ...`);
 
                 reconnectTimer = setTimeout(() => {
+                    reconnectTimer = null;
+
                     if (stopped) return;
 
                     reconnecting = true;
-
-                    // إزالة الاتصال القديم فقط قبل إنشاء اتصال جديد
-                    const current = activeBots.get(botName);
-                    if (current && current.bot === mcBot) {
-                        activeBots.delete(botName);
-                    }
-
                     connect();
                 }, 5000);
-            } else {
-                const current = activeBots.get(botName);
-                if (current && current.bot === mcBot) {
-                    activeBots.delete(botName);
-                }
             }
         });
 
