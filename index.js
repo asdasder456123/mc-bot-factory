@@ -59,6 +59,7 @@ function createMcBot(ip, port, botName, version, channel) {
 
         let authDone = false;
         let authTimer = null;
+        let reconnecting = false;
 
         const scheduleAuth = (type) => {
             if (authDone) return;
@@ -80,7 +81,13 @@ function createMcBot(ip, port, botName, version, channel) {
 
         mcBot.on("login", () => {
             console.log(`[تسجيل دخول] ${botName} اتصل بالسيرفر!`);
-            channel.send(`✅ الروبوت **${botName}** اتصل بالسيرفر!`);
+
+            if (reconnecting) {
+                channel.send(`🔄 الروبوت **${botName}** عاد إلى السيرفر بنجاح!`);
+                reconnecting = false;
+            } else {
+                channel.send(`✅ الروبوت **${botName}** اتصل بالسيرفر!`);
+            }
         });
 
         mcBot.on("messagestr", (message) => {
@@ -148,6 +155,8 @@ function createMcBot(ip, port, botName, version, channel) {
 
                 reconnectTimer = setTimeout(() => {
                     if (stopped) return;
+
+                    reconnecting = true;
 
                     // إزالة الاتصال القديم فقط قبل إنشاء اتصال جديد
                     const current = activeBots.get(botName);
