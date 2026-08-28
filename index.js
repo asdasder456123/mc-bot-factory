@@ -1,6 +1,7 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require('discord.js');
-const mineflayer = require('mineflayer');
+
+const { Client, GatewayIntentBits } = require("discord.js");
+const mineflayer = require("mineflayer");
 
 const client = new Client({
     intents: [
@@ -12,102 +13,205 @@ const client = new Client({
 
 const activeBots = new Map();
 
-// كلمة السر القوية والمحددة
-const SAFE_PASS = '0.963852963as';
+const AUTH_PASS = process.env.AUTH_PASS;
 
-client.on('clientReady', () => {
-    console.log(`تم تسجيل الدخول باسم ${client.user.tag}! البوت جاهز بكلمة السر الجديدة.`);
-});
+if (!AUTH_PASS) {
+    console.error("❌ AUTH_PASS غير موجود في Environment Variables.");
+    process.exit(1);
+}
+
+function normalizeBotName(name) {
+    return name.toUpperCase();
+}
 
 function createMcBot(ip, port, botName, version, channel) {
-    console.log(`جاري الاتصال بـ ${ip}:${port} باسم ${botName}...`);
-    
-    try {
+    botName = normalizeBotName(botName);
+
+    if (activeBots.has(botName)) {
+        channel.send(`⚠️ الروبوت **${botName}** شغال بالفعل!`);
+        return;
+    }
+
+    let reconnectTimer = null;
+    let stopped = false;
+
+    const connect = () => {
+        if (stopped || activeBots.has(botName)) return;
+
+        console.log(`جاري الاتصال بـ ${ip}:${port} باسم ${botName}...`);
+
         const botOptions = {
             host: ip,
             port: port,
             username: botName,
+            version: version && version !== "auto" ? version : undefined,
             checkTimeoutInterval: 60000
         };
 
-        if (version && version !== 'auto') {
-            botOptions.version = version;
-        }
-
         const mcBot = mineflayer.createBot(botOptions);
-        activeBots.set(botName, mcBot);
 
-        // إرسال أمر التسجيل والدخول بكلمة السر الجديدة
-        const sendAuthCommands = () => {
-            mcBot.chat(`/register ${SAFE_PASS} ${SAFE_PASS}`);
-            mcBot.chat(`/login ${SAFE_PASS}`);
-        };
-
-        mcBot.on('login', () => {
-            console.log(`[تسجيل دخول] ${botName} اتصل بالسيرفر!`);
-            channel.send(`✅ الروبوت **${botName}** اتصل بالسيرفر بنجاح!`);
-            setTimeout(sendAuthCommands, 1000);
-        });
-
-        mcBot.on('spawn', () => {
-            sendAuthCommands();
-        });
-
-        // متابعة شات السيرفر والرد فوراً في حالة طلب التسجيل أو كلمة السر
-        mcBot.on('messagestr', (message) => {
-            console.log(`[شات ${botName}]: ${message}`);
-            const lowerText = message.toLowerCase();
-
-            if (
-                lowerText.includes('register') || 
-                lowerText.includes('password') || 
-                lowerText.includes('login')
-            ) {
-                sendAuthCommands();
+        activeBots.set(botName, {
+            bot: mcBot,
+            stop: () => {
+                stopped = true;
+                if (reconnectTimer) clearTimeout(reconnectTimer);
+                try {
+                    mcBot.quit();
+                } catch {}
             }
         });
 
-        mcBot.on('end', (reason) => {
-            console.log(`[خروج] ${botName}: ${reason}`);
-            activeBots.delete(botName);
-            channel.send(`❌ الروبوت **${botName}** خرج من السيرفر.`);
+        let authDone = false;
+        let authTimer = null;
+
+        const scheduleAuth = (type) => {
+            if (authDone) return;
+
+            if (authTimer) clearTimeout(authTimer);
+
+            authTimer = setTimeout(() => {
+                if (authDone || !mcBot.entity) return;
+
+                if (type === "register") {
+                    mcBot.chat(`/register ${AUTH_PASS} ${AUTH_PASS}`);
+                    console.log(`[AuthMe] ${botName}: register`);
+                } else if (type === "login") {
+                    mcBot.chat(`/login ${AUTH_PASS}`);
+                    console.log(`[AuthMe] ${botName}: login`);
+                }
+            }, 300);
+        };
+
+        mcBot.on("login", () => {
+            console.log(`[تسجيل دخول] ${botName} اتصل بالسيرفر!`);
+            channel.send(`✅ الروبوت **${botName}** اتصل بالسيرفر!`);
         });
 
-        mcBot.on('error', (err) => {
-            console.error(`[خطأ] ${botName}:`, err.message);
-            activeBots.delete(botName);
-            channel.send(`⚠️ حدث خطأ في الروبوت **${botName}**: \`${err.message}\``);
+        mcBot.on("messagestr", (message) => {
+            console.log(`[شات ${botName}]: ${message}`);
+
+            const text = message.toLowerCase();
+
+            // AuthMe طلب التسجيل
+            if (
+                !authDone &&
+                (
+                    text.includes("please register") ||
+                    text.includes("register") && text.includes("password")
+                )
+            ) {
+                scheduleAuth("register");
+                return;
+            }
+
+            // AuthMe طلب تسجيل الدخول
+            if (
+                !authDone &&
+                (
+                    text.includes("please login") ||
+                    text.includes("login") && text.includes("password")
+                )
+            ) {
+                scheduleAuth("login");
+                return;
+            }
+
+            // تم الدخول بالفعل
+            if (
+                text.includes("already logged in") ||
+                text.includes("you are logged in") ||
+                text.includes("successfully logged in")
+            ) {
+                authDone = true;
+                if (authTimer) clearTimeout(authTimer);
+                console.log(`[AuthMe] ${botName}: تم تسجيل الدخول.`);
+            }
+
+            // تم التسجيل بنجاح
+            if (
+                text.includes("successfully registered") ||
+                text.includes("registration successful")
+            ) {
+                authDone = true;
+                if (authTimer) clearTimeout(authTimer);
+                console.log(`[AuthMe] ${botName}: تم التسجيل.`);
+            }
         });
 
-    } catch (err) {
-        activeBots.delete(botName);
-        channel.send(`❌ فشل تشغيل الروبوت **${botName}**: ${err.message}`);
-    }
+        mcBot.on("spawn", () => {
+            console.log(`[Spawn] ${botName} دخل العالم.`);
+        });
+
+        mcBot.on("end", (reason) => {
+            console.log(`[خروج] ${botName}: ${reason || "socket closed"}`);
+
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+
+            if (!stopped) {
+                console.log(`[إعادة اتصال] ${botName} سيحاول الدخول مرة أخرى...`);
+
+                reconnectTimer = setTimeout(() => {
+                    activeBots.delete(botName);
+                    connect();
+                }, 5000);
+            } else {
+                activeBots.delete(botName);
+            }
+        });
+
+        mcBot.on("error", (err) => {
+            console.error(`[خطأ] ${botName}: ${err.message}`);
+        });
+
+        mcBot.on("kicked", (reason) => {
+            console.log(`[طرد] ${botName}: ${reason}`);
+        });
+    };
+
+    connect();
 }
 
-client.on('messageCreate', (message) => {
+client.once("ready", () => {
+    console.log(`تم تسجيل الدخول باسم روبوت Discord: ${client.user.tag}`);
+    console.log("البوت جاهز.");
+});
+
+client.on("messageCreate", (message) => {
     if (message.author.bot) return;
 
-    const args = message.content.trim().split(/ +/);
-    const command = args.shift().toLowerCase();
+    const args = message.content.trim().split(/\s+/);
+    const command = args.shift()?.toLowerCase();
 
-    if (command === '!start') {
-        const ip = args[0];
-        const port = parseInt(args[1]);
-        const botName = args[2];
-        const version = args[3] || '1.20.1';
+    if (command !== "!start") return;
 
-        if (!ip || isNaN(port) || !botName) {
-            return message.reply('❌ الصيغة خاطئة! اكتب الأمر كدة:\n`!start <IP> <Port> <BotName> [Version]`');
-        }
+    const ip = args[0];
+    const port = Number(args[1]);
+    const requestedName = args[2];
+    const version = args[3] || "auto";
 
-        if (activeBots.has(botName)) {
-            return message.reply(`⚠️ الروبوت **${botName}** شغال بالفعل!`);
-        }
-
-        message.reply(`🔄 جاري تشغيل **${botName}**...`);
-        createMcBot(ip, port, botName, version, message.channel);
+    if (!ip || !Number.isInteger(port) || !requestedName) {
+        return message.reply(
+            "❌ الاستخدام الصحيح:\n`!start <IP> <PORT> <BOT_NAME> [VERSION]`"
+        );
     }
+
+    const botName = normalizeBotName(requestedName);
+
+    if (activeBots.has(botName)) {
+        return message.reply(`⚠️ الروبوت **${botName}** شغال بالفعل!`);
+    }
+
+    message.reply(
+        `🔄 جاري تشغيل **${botName}** على \`${ip}:${port}\` بإصدار \`${version}\`...`
+    );
+
+    createMcBot(
+        ip,
+        port,
+        botName,
+        version,
+        message.channel
+    );
 });
 
 client.login(process.env.TOKEN);
