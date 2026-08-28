@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { Client, GatewayIntentBits } = require('discord.js');
 const mineflayer = require('mineflayer');
 
@@ -109,4 +110,4 @@ client.on('messageCreate', (message) => {
     }
 });
 
-client.login('DISCORD_TOKEN');
+client.login(process.env.TOKEN);
