@@ -144,19 +144,34 @@ function createMcBot(ip, port, botName, version, channel) {
             if (reconnectTimer) clearTimeout(reconnectTimer);
 
             if (!stopped) {
-                console.log(`[إعادة اتصال] ${botName} سيحاول الدخول مرة أخرى...`);
+                console.log(`[إعادة اتصال] ${botName} سيحاول الدخول مرة أخرى خلال 5 ثوانٍ...`);
 
                 reconnectTimer = setTimeout(() => {
-                    activeBots.delete(botName);
+                    if (stopped) return;
+
+                    // إزالة الاتصال القديم فقط قبل إنشاء اتصال جديد
+                    const current = activeBots.get(botName);
+                    if (current && current.bot === mcBot) {
+                        activeBots.delete(botName);
+                    }
+
                     connect();
                 }, 5000);
             } else {
-                activeBots.delete(botName);
+                const current = activeBots.get(botName);
+                if (current && current.bot === mcBot) {
+                    activeBots.delete(botName);
+                }
             }
         });
 
         mcBot.on("error", (err) => {
             console.error(`[خطأ] ${botName}: ${err.message}`);
+
+            // أخطاء الشبكة لا توقف الروبوت؛ حدث end سيبدأ إعادة الاتصال.
+            if (!stopped) {
+                console.log(`[مراقبة] ${botName} سيستمر في محاولة الاتصال إذا انقطع الاتصال.`);
+            }
         });
 
         mcBot.on("kicked", (reason) => {
