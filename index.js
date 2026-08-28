@@ -15,10 +15,6 @@ const activeBots = new Map();
 
 const AUTH_PASS = "0.963852963";
 
-if (!AUTH_PASS) {
-    console.error("❌ AUTH_PASS غير موجود في Environment Variables.");
-    process.exit(1);
-}
 
 function normalizeBotName(name) {
     return name.toUpperCase();
