@@ -32,6 +32,9 @@ function createMcBot(ip, port, botName, version, channel) {
     let stopped = false;
     let currentBot = null;
 
+    let reconnectDelay = 5000;
+    let reconnecting = false;
+
     const connect = () => {
         if (stopped || currentBot) return;
 
@@ -61,7 +64,6 @@ function createMcBot(ip, port, botName, version, channel) {
 
         let authDone = false;
         let authTimer = null;
-        let reconnecting = false;
 
         const scheduleAuth = (type) => {
             if (authDone) return;
@@ -82,13 +84,15 @@ function createMcBot(ip, port, botName, version, channel) {
         };
 
         mcBot.on("login", () => {
+            reconnectDelay = 5000;
+
             console.log(`[تسجيل دخول] ${botName} اتصل بالسيرفر!`);
 
             if (reconnecting) {
-                channel.send(`🔄 الروبوت **${botName}** عاد إلى السيرفر بنجاح!`);
+                channel?.send(`🔄 الروبوت **${botName}** عاد إلى السيرفر بنجاح!`);
                 reconnecting = false;
             } else {
-                channel.send(`✅ الروبوت **${botName}** اتصل بالسيرفر!`);
+                channel?.send(`✅ الروبوت **${botName}** اتصل بالسيرفر!`);
             }
         });
 
@@ -154,20 +158,27 @@ function createMcBot(ip, port, botName, version, channel) {
                 currentBot = null;
             }
 
+            if (authTimer) clearTimeout(authTimer);
             if (reconnectTimer) clearTimeout(reconnectTimer);
 
-            if (!stopped) {
-                console.log(`[إعادة اتصال] ${botName} سيحاول الدخول مرة أخرى خلال 5 ثوانٍ...`);
+            if (stopped) return;
 
-                reconnectTimer = setTimeout(() => {
-                    reconnectTimer = null;
+            reconnecting = true;
 
-                    if (stopped) return;
+            // 5s → 10s → 20s → 40s → 60s كحد أقصى
+            reconnectDelay = Math.min(reconnectDelay * 2, 60000);
 
-                    reconnecting = true;
-                    connect();
-                }, 5000);
-            }
+            console.log(
+                `[إعادة اتصال] ${botName} سيحاول مرة أخرى خلال ${Math.round(reconnectDelay / 1000)} ثانية...`
+            );
+
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+
+                if (stopped || currentBot) return;
+
+                connect();
+            }, reconnectDelay);
         });
 
         mcBot.on("error", (err) => {
