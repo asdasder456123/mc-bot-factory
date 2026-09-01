@@ -364,6 +364,36 @@ client.on("messageCreate", (message) => {
     const args = message.content.trim().split(/\s+/);
     const command = args.shift()?.toLowerCase();
 
+    if (command === "!status") {
+        if (activeBots.size === 0) {
+            return message.reply("📊 لا يوجد أي روبوت Minecraft يعمل حاليًا.");
+        }
+
+        const lines = [];
+
+        for (const [botName, info] of activeBots) {
+            const bot = info.bot;
+            const state = botHealth.get(botName) || "starting";
+
+            let icon = "⚪";
+            if (state === "healthy") icon = "🟢";
+            else if (state === "connected") icon = "🔵";
+            else if (state === "reconnecting") icon = "🟡";
+
+            const connected = Boolean(bot?.entity);
+
+            lines.push(
+                `${icon} **${botName}**\n` +
+                `الحالة: ${state}\n` +
+                `داخل العالم: ${connected ? "نعم" : "لا"}`
+            );
+        }
+
+        return message.reply(
+            `📊 **حالة روبوتات Minecraft**\n\n${lines.join("\n\n")}`
+        );
+    }
+
     if (command !== "!start") return;
 
     const ip = args[0];
