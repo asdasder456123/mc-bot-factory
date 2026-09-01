@@ -12,8 +12,6 @@ const client = new Client({
 });
 
 const activeBots = new Map();
-const botHealth = new Map();
-const alertState = new Map();
 const warnedBots = new Set();
 
 const AUTH_PASS = "0.963852963";
@@ -57,8 +55,6 @@ function createMcBot(ip, port, botName, version) {
     let currentBot = null;
     let reconnectDelay = 5000;
     let reconnecting = false;
-    let lastActivity = Date.now();
-    let consecutiveFailures = 0;
 
     sendFirstWarning(botName);
 
@@ -92,7 +88,6 @@ function createMcBot(ip, port, botName, version) {
         }
 
         currentBot = mcBot;
-        lastActivity = Date.now();
 
         activeBots.set(botName, {
             bot: mcBot,
@@ -144,9 +139,6 @@ function createMcBot(ip, port, botName, version) {
         };
 
         mcBot.on("login", () => {
-            lastActivity = Date.now();
-            consecutiveFailures = 0;
-            botHealth.set(botName, "connected");
             reconnectDelay = 5000;
 
             console.log(
@@ -155,7 +147,6 @@ function createMcBot(ip, port, botName, version) {
         });
 
         mcBot.on("messagestr", (message) => {
-            lastActivity = Date.now();
             console.log(`[شات ${botName}]: ${message}`);
 
             const text = message.toLowerCase();
@@ -215,9 +206,6 @@ function createMcBot(ip, port, botName, version) {
         });
 
         mcBot.on("spawn", () => {
-            lastActivity = Date.now();
-            consecutiveFailures = 0;
-            botHealth.set(botName, "healthy");
             reconnectDelay = 5000;
 
             console.log(
@@ -234,9 +222,6 @@ function createMcBot(ip, port, botName, version) {
         });
 
         mcBot.on("end", (reason) => {
-            lastActivity = Date.now();
-            consecutiveFailures++;
-            botHealth.set(botName, "reconnecting");
             console.log(
                 `[خروج] ${botName}: ${reason || "socket closed"}`
             );
@@ -274,8 +259,6 @@ function createMcBot(ip, port, botName, version) {
         });
 
         mcBot.on("error", (err) => {
-            lastActivity = Date.now();
-            consecutiveFailures++;
             console.error(
                 `[خطأ] ${botName}: ${err.message}`
             );
@@ -319,36 +302,6 @@ function createMcBot(ip, port, botName, version) {
 
     connect();
 }
-
-
-// ================================
-// 🛡️ Smart Bot Monitoring
-// ================================
-
-setInterval(() => {
-    for (const [botName, info] of activeBots) {
-        const bot = info.bot;
-
-        if (!bot) continue;
-
-        const state = botHealth.get(botName) || "starting";
-
-        console.log(
-            `[Monitor] ${botName}: ${state} | ` +
-            `active=${Boolean(bot.entity)}`
-        );
-    }
-}, 60000);
-
-// تنظيف بيانات البوتات التي لم تعد موجودة
-setInterval(() => {
-    for (const botName of botHealth.keys()) {
-        if (!activeBots.has(botName)) {
-            botHealth.delete(botName);
-            alertState.delete(botName);
-        }
-    }
-}, 300000);
 
 client.once("ready", () => {
     console.log(
